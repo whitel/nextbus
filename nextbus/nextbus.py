@@ -179,7 +179,7 @@ class Route(object):
     stops = { stop.tag: stop for stop in stops }
 
     directions = []
-    for direction in filter(lambda x: x.tag == 'direction', result[0].children):
+    for direction in [x for x in result[0].children if x.tag == 'direction']:
       directions.append(Direction(
         route=self.tag,
         stops=[stops[str(e.attrs.tag)] for e in direction.children],
@@ -286,7 +286,7 @@ class Run(object):
 
   def __repr__(self):
     return "Run(route=%s, stops=%s, scheduleClass=%s, serviceClass=%s, direction=%s, blockId=%s)" % \
-        (self.route, map(repr, self.stops), self.schedule_class, self.service_class, self.direction, self.block_id)
+        (self.route, list(map(repr, self.stops)), self.schedule_class, self.service_class, self.direction, self.block_id)
 
 
 class Direction(object):
@@ -357,7 +357,7 @@ def _fetch_xml(args):
   response = requests.get(WEBSERVICES, params=args)
   xml = ET.fromstring(response.text)
   result = _xml2attrs(xml).children
-  if len(result.children) > 0 and result.children[0].tag == 'Error':
+  if len(result) > 0 and result[0].tag == 'Error':
     raise NextBusException(result.children[0].text)
   else:
     return result
@@ -380,7 +380,7 @@ def _xml2attrs(elem):
 
   result = attrs({
     'tag': elem.tag,
-    'attrs': attrs({ k: convert(v) for (k, v) in elem.attrib.items() }),
+    'attrs': attrs({ k: convert(v) for (k, v) in list(elem.attrib.items()) }),
   })
 
   if len(elem.getchildren()) > 0:
