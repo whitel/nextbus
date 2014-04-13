@@ -1,203 +1,64 @@
-import datetime
-import re
-import xml.etree.ElementTree as ET
+# import datetime
+# import re
+# import xml.etree.ElementTree as ET
+#
+# from configurati import attrs
 
-from configurati import attrs
+from nextbus import NextBus
 import requests
 
-
-WEBSERVICES = 'http://webservices.nextbus.com/service/publicXMLFeed'
-
-
-class NextBus(object):
-    """Raw API for interacting with nextbus.com
-
-    This API returns the direct output of a call to the NextBus XML API.
-    """
-    def vehicle_locations(self, agency, route, time=0):
-        """Get all vehicle locations for a particular route
-
-        Parameters
-        ----------
-        agency : str
-            agency code (see `NextBus.agencies`)
-        route : str
-            route code (see `NextBus.routes`)
-        time : int
-            number of milliseconds since epoch. if 0, now - 15 minutes.
-        """
-        return NextBus._fetch_xml({
-          'command': 'vehicleLocations',
-          'a': agency,
-          'r': route,
-          't': _epoch(time),
-        })
-
-    def schedule(self, agency, route):
-        """Get schedule for a particular route
-
-        Parameters
-        ----------
-        agency : str
-            agency code (see `NextBus.agencies`)
-        route : str
-            route code (see `NextBus.routes`)
-        """
-        return NextBus._fetch_xml({
-          'command': 'schedule',
-          'a': agency,
-          'r': route,
-        })
-
-    def routes(self, agency):
-        """Get all routes run by an agency
-
-        Parameters
-        ----------
-        agency : str
-            agency code (see `NextBus.agencies`)
-        """
-        return NextBus._fetch_xml({
-          'command': 'routeList',
-          'a': agency,
-        })
-
-    def stops(self, agency, route):
-        """Get all stops and directions a route can take for a particular route
-
-        Parameters
-        ----------
-        agency : str
-            agency code (see `NextBus.agencies`)
-        route : str
-            route code (see `NextBus.routes`)
-        """
-        return NextBus._fetch_xml({
-            'command': 'routeConfig',
-            'a': agency,
-            'r': route,
-        })
-
-    def agencies_raw(self):
-        """Get all bus agencies served by NextBus"""
-        return NextBus._fetch_xml({
-            'command': 'agencyList',
-    })
-
-    @staticmethod
-    def _fetch_xml(args):
-      """Download XML, convert to attributes dictionary"""
-      response = requests.get(WEBSERVICES, params=args)
-      xml = ET.fromstring(response.text)
-      result = NextBus._xml2attrs(xml).children
-      if len(result) > 0 and result[0].tag == 'Error':
-        raise NextBusException(result.children[0].text)
-      else:
-        return result
-
-    @staticmethod
-    def _xml2attrs(elem):
-        """Convert XML to attributes dictionary"""
-
-        def convert(v):
-            if re.search('^-?\d+[.]\d+$', v):
-              return float(v)
-            elif re.search('^-?\d+$', v):
-              return int(v)
-            elif v == 'true':
-              return True
-            elif v == 'false':
-              return False
-            else:
-              return v
-
-        result = attrs({
-            'tag': elem.tag,
-            'attrs': attrs({ k: convert(v) for (k, v) in list(elem.attrib.items()) }),
-        })
-
-        if len(elem.getchildren()) > 0:
-            result.children = [NextBus._xml2attrs(child) for child in elem.getchildren()]
-        if elem.text:
-            result.text = elem.text
-
-        return result
-
-    @staticmethod
-    def _epoch(time):
-      """milliseconds since 12AM Jan 1, 1970"""
-      if isinstance(time, float) or isinstance(time, int):
-        return time
-      elif isinstance(time, datetime.datetime):
-        start = datetime.utcfromtimestamp(0)
-        delta = time - start
-        return int(delta.total_seconds() * 1000)
-
-
-    @staticmethod
-    def agencies():
-        """Get all agencies tracked by NextBus
-
-        Returns
-        -------
-        agencies : [Agency]
-        """
-        result = NextBus().agencies_raw()
-        return [Agency(**e.attrs) for e in result if e.tag == 'agency']
-    #
-    # @staticmethod
-    # def agencies():
-    #     """Get all agencies tracked by NextBus
-    #
-    #     Returns
-    #     -------
-    #     agencies : [Agency]
-    #     """
-    #     result = NextBus().agencies_raw()
-    #     tmp = [Agency(**e.attrs) for e in result if e.tag == 'agency']
-    #     retVal = []
-    #     return dict((a.tag, a) for a in [Agency(**e.attrs) for e in result if e.tag == 'agency'])
-
-class Agency(object):
-  """A single agency served by NextBus
-
-  Parameters
-  ----------
-  tag : str
-      unique identifier for this agency
-  title : str
-      human-readable name for this agency
-  regionTitle : str
-      area served by this agency (e.g. California-Northern)
-  shortTitle : str
-      a shorter human-readable name for this agency
-  """
-  def __init__(self, tag, title, regionTitle, shortTitle=None, **kwargs):
-    self.tag          = str(tag)
-    self.title        = str(title)
-    self.short_title  = str(shortTitle or title)
-    self.region_title = str(regionTitle)
-
-  @property
-  def routes(self):
-    """All routes this agency serves
+def agencies_dict():
+    """Get all agencies tracked by NextBus
 
     Returns
     -------
-    routes : [Route]
+    agencies : [Agency]
     """
-    result = NextBus._fetch_xml({
-      'command': 'routeList',
-      'a': self.tag,
-    })
-    return [Route(agency=self.tag, **e.attrs) for e in result if e.tag == 'route']
+    result = NextBus().agencies_raw()
+    return dict((a.tag, a) for a in [Agency(**e.attrs) for e in result if e.tag == 'agency'])
 
-  def __str__(self):
-    return "Agency: %s" % self.title
-  def __repr__(self):
-    return "Agency(tag=%s, title=%s, regionTitle=%s, shortTitle=%s)" % \
-        (self.tag, self.title, self.region_title, self.short_title)
+class Agency(object):
+    """A single agency served by NextBus
 
+    Parameters
+    ----------
+    tag : str
+        unique identifier for this agency
+    title : str
+        human-readable name for this agency
+    regionTitle : str
+        area served by this agency (e.g. California-Northern)
+    shortTitle : str
+        a shorter human-readable name for this agency
+    """
+    def __init__(self, tag, title, regionTitle, shortTitle=None, **kwargs):
+        self.tag          = str(tag)
+        self.title        = str(title)
+        self.short_title  = str(shortTitle or title)
+        self.region_title = str(regionTitle)
+        self._routes      = None
+
+    @property
+    def routes(self):
+        """All routes this agency serves
+
+        Returns
+        -------
+        routes : [Route]
+        """
+        if (self._routes is None):
+            result = NextBus._fetch_xml({
+                'command': 'routeList',
+                'a': self.tag,
+            })
+            self._routes = dict((r.tag, r) for r in [Route(agency=self.tag, **e.attrs) for e in result if e.tag == 'route'])
+        return self._routes
+
+    def __str__(self):
+        return "Agency: %s" % self.title
+    def __repr__(self):
+        return "Agency(tag=%s, title=%s, regionTitle=%s, shortTitle=%s)" % \
+            (self.tag, self.title, self.region_title, self.short_title)
 
 class Route(object):
   """A single transit route. e.g. SF MUNI's N bus
@@ -278,7 +139,7 @@ class Route(object):
     ------
     runs : [Run]
     """
-    result = NextBus._fetch_xml({
+    result = _fetch_xml({
       'command': 'schedule',
       'a': self.agency,
       'r': self.tag,
@@ -413,13 +274,3 @@ class Stop(object):
     return "Stop(route=%s, tag=%s, title=%s, lat=%s, lon=%s, stopId=%s, title=%s)" % \
         (self.route, self.tag, self.title, self.lat, self.lon, self.stop_id, self.short_title)
 
-class NextBusException(Exception):
-  pass
-
-
-if __name__ == '__main__':
-  agencies   = agencies()
-  routes     = agencies[0].routes
-  directions = routes[0].directions
-  stops      = routes[0].stops
-  schedule   = routes[0].schedule
